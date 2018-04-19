@@ -20,6 +20,8 @@ namespace Microsoft.AspNetCore.Mvc.Internal
     {
         private readonly MvcOptions _mvcOptions;
         private readonly IModelMetadataProvider _modelMetadataProvider;
+        private readonly Func<ActionContext, bool> _supportsAllRequests;
+        private readonly Func<ActionContext, bool> _supportsNonGetRequests;
 
         public DefaultApplicationModelProvider(
             IOptions<MvcOptions> mvcOptionsAccessor,
@@ -27,6 +29,9 @@ namespace Microsoft.AspNetCore.Mvc.Internal
         {
             _mvcOptions = mvcOptionsAccessor.Value;
             _modelMetadataProvider = modelMetadataProvider;
+
+            _supportsAllRequests = _ => true;
+            _supportsNonGetRequests = context => !string.Equals(context.HttpContext.Request.Method, "GET", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <inheritdoc />
@@ -224,10 +229,15 @@ namespace Microsoft.AspNetCore.Mvc.Internal
             if (bindingInfo == null)
             {
                 var declaringType = propertyInfo.DeclaringType;
-                if (declaringType.IsDefined(typeof(BindPropertyAttribute), inherit: true))
+                var bindPropertyAttribute = declaringType.GetCustomAttribute<BindPropertiesAttribute>(inherit: true);
+                if (bindPropertyAttribute != null)
                 {
                     // Specify a BindingInfo so that the property is now considered for model binding.
-                    bindingInfo = new BindingInfo();
+                    var requestPredicate = bindPropertyAttribute.SupportsGet ? _supportsAllRequests : _supportsNonGetRequests;
+                    bindingInfo = new BindingInfo
+                    {
+                        RequestPredicate = requestPredicate,
+                    };
                 }
             }
 

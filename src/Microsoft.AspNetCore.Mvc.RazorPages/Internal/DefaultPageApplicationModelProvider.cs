@@ -20,6 +20,9 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages.Internal
         private readonly PageHandlerResultFilter _pageHandlerResultFilter = new PageHandlerResultFilter();
         private readonly IModelMetadataProvider _modelMetadataProvider;
         private readonly MvcOptions _options;
+        private readonly Func<ActionContext, bool> _supportsAllRequests;
+        private readonly Func<ActionContext, bool> _supportsNonGetRequests;
+
 
         public DefaultPageApplicationModelProvider(
             IModelMetadataProvider modelMetadataProvider,
@@ -27,6 +30,9 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages.Internal
         {
             _modelMetadataProvider = modelMetadataProvider;
             _options = options.Value;
+
+            _supportsAllRequests = _ => true;
+            _supportsNonGetRequests = context => !string.Equals(context.HttpContext.Request.Method, "GET", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <inheritdoc />
@@ -269,10 +275,17 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages.Internal
             {
                 // Look for binding info on the handler if nothing is specified on the property.
                 // This allows BindProperty attributes on handlers to apply to properties.
-                var handlerType = property.DeclaringType;
-                var handlerAttributes = handlerType.GetCustomAttributes(inherit: true);
-                var handlerMetadata = _modelMetadataProvider.GetMetadataForType(property.DeclaringType);
-                bindingInfo = BindingInfo.GetBindingInfo(handlerAttributes, handlerMetadata);
+                var declaringType = property.DeclaringType;
+                var bindPropertyAttribute = declaringType.GetCustomAttribute<BindPropertiesAttribute>(inherit: true);
+                if (bindPropertyAttribute != null)
+                {
+                    // Specify a BindingInfo so that the property is now considered for model binding.
+                    var requestPredicate = bindPropertyAttribute.SupportsGet ? _supportsAllRequests : _supportsNonGetRequests;
+                    bindingInfo = new BindingInfo
+                    {
+                        RequestPredicate = requestPredicate,
+                    };
+                }
             }
 
             var model = new PagePropertyModel(property, propertyAttributes)
